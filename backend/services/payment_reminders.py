@@ -86,9 +86,11 @@ def build_reminder_item(
         return None
     if not in_reminder_window(today, due):
         return None
-    if latest and has_ack_for_latest(db, card, latest):
-        return None
-    if not latest and has_manual_cycle_ack(card):
+    uses_manual = bool(getattr(card, "manual_next_due_date", None))
+    if uses_manual:
+        if has_manual_cycle_ack(card):
+            return None
+    elif latest and has_ack_for_latest(db, card, latest):
         return None
 
     amt = effective_amount_due(card, latest)
@@ -101,7 +103,7 @@ def build_reminder_item(
         "dueDate": due.isoformat(),
         "totalAmountDue": amt,
         "currency": cur[:3].upper() if isinstance(cur, str) else "INR",
-        "usesManualDueDate": bool(getattr(card, "manual_next_due_date", None)),
+        "usesManualDueDate": uses_manual,
     }
 
 
@@ -143,6 +145,9 @@ def acknowledge_paid(db: Session, card_id: str) -> Tuple[bool, Optional[str]]:
     if not card:
         return False, "Card not found"
     latest = latest_cc_statement_for_card(db, card)
+
+    if getattr(card, "manual_next_due_date", None):
+        card.manual_due_acknowledged_for = card.manual_next_due_date
 
     if latest:
         existing = (

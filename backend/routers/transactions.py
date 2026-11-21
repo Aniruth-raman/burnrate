@@ -68,6 +68,7 @@ def list_transactions(
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
     category: Optional[str] = Query(None),
+    categories: Optional[str] = Query(None, description="Comma-separated category slugs"),
     search: Optional[str] = Query(None),
     tags: Optional[str] = Query(None, description="Comma-separated tag names to filter by"),
     direction: Optional[str] = Query(None, description="incoming or outgoing"),
@@ -109,6 +110,10 @@ def list_transactions(
         q = q.filter(Transaction.date <= to_date)
     if category:
         q = q.filter(Transaction.category == category)
+    if categories:
+        category_list = [c.strip() for c in categories.split(",") if c.strip()]
+        if category_list:
+            q = q.filter(Transaction.category.in_(category_list))
     if direction == "incoming":
         q = q.filter(Transaction.type == "credit")
     elif direction == "outgoing":

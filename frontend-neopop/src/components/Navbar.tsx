@@ -2,7 +2,6 @@ import { Button, Typography } from '@cred/neopop-web/lib/components';
 import { colorPalette, mainColors } from '@cred/neopop-web/lib/primitives';
 import { FontType, FontWeights } from '@cred/neopop-web/lib/components/Typography/types';
 import { Settings } from 'lucide-react';
-import { SyncStatus } from '@/components/SyncStatus';
 
 interface NavbarProps {
   activeTab?: string;
@@ -16,8 +15,6 @@ const TABS = [
   { id: 'transactions', label: 'Transactions' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'statements', label: 'Statements' },
-  { id: 'offers', label: 'Offers' },
-  { id: 'milestones', label: 'Milestones' },
   { id: 'customize', label: 'Customize' },
 ];
 
@@ -70,7 +67,6 @@ export function Navbar({ activeTab = 'dashboard', onTabChange, className }: Navb
           gap: 12,
         }}
       >
-        <SyncStatus />
         <Button
           kind="elevated"
           size="small"

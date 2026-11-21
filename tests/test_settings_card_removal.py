@@ -4,9 +4,17 @@ Runs as the last `test_*.py` module (alphabetical) so the shared session DB is
 not mutated before other integration tests.
 """
 
+from pathlib import Path
+
 import pytest
 
-from tests.synthetic_profile import LAST4_AXIS, LAST4_HDFC, LAST4_ICICI, NAME
+from tests.synthetic_profile import ICICI_STATEMENT, LAST4_AXIS, LAST4_HDFC, LAST4_ICICI, NAME
+
+_FIXTURES = Path(__file__).parent / "fixtures"
+pytestmark = pytest.mark.skipif(
+    not (_FIXTURES / ICICI_STATEMENT).exists(),
+    reason="integration fixture PDFs are gitignored; upload tests are skipped",
+)
 
 
 def _get_card_id(api_client, bank: str, last4: str) -> str:

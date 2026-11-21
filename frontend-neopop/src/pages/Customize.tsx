@@ -1,20 +1,14 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ButtonWithIcon } from '@/components/ButtonWithIcon';
+import { useNavigate } from 'react-router-dom';
 import { Navbar } from '@/components/Navbar';
-import { Button, Typography, Tag, InputField, Row, Column } from '@cred/neopop-web/lib/components';
+import { Button, Typography, Tag, InputField, Row } from '@cred/neopop-web/lib/components';
 import {
   SelectableElevatedCard as ElevatedCard,
   TRANSPARENT_ELEVATED_CARD_EDGES,
 } from '@/components/SelectableElevatedCard';
 import { FontType, FontWeights } from '@cred/neopop-web/lib/components/Typography/types';
 import {
-  getStatements,
-  deleteStatement,
-  reparseStatement,
-  reparseAllStatements,
-  retryWithPassword,
   getAllCategories,
   createCategory,
   updateCategory,
@@ -22,24 +16,17 @@ import {
   getTagDefinitions,
   createTagDefinition,
   deleteTagDefinition,
-  getGmailStatus,
-  startGmailAuth,
-  disconnectGmail,
   triggerRecategorize,
 } from '@/lib/api';
-import type { Statement } from '@/lib/types';
-import type { CategoryResponse, TagDefinitionResponse, GmailStatusResponse } from '@/lib/api';
+import type { CategoryResponse, TagDefinitionResponse } from '@/lib/api';
 import { toast } from '@/components/Toast';
-import { RefreshCw, Palette, Trash2, Tag as TagIcon, Check, AlertTriangle, MessageSquarePlus, Lock, Mail, Lightbulb, Calendar, Database } from 'lucide-react';
+import { Palette, Tag as TagIcon, Check, Calendar, Database } from 'lucide-react';
 import { colorPalette, mainColors } from '@cred/neopop-web/lib/primitives';
 import { CloseButton } from '@/components/CloseButton';
 import { TrashIconButton } from '@/components/TrashIconButton';
 import { PlusIconButton } from '@/components/PlusIconButton';
-import { ConfirmModal } from '@/components/ConfirmModal';
-import { InsightsSettingsModal } from '@/components/InsightsSettingsModal';
 import { PaymentRemindersModal } from '@/components/PaymentRemindersModal';
 import { DataManagementModal } from '@/components/DataManagementModal';
-import { FeedbackModal } from '@/components/FeedbackModal';
 import styled from 'styled-components';
 
 const PageLayout = styled.div`
@@ -291,327 +278,6 @@ export function DefineTagsModal({ open, onClose }: { open: boolean; onClose: () 
           )}
         </div>
       </ElevatedCard>
-    </ModalOverlay>
-  );
-}
-
-export function ReparseRemoveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [statements, setStatements] = useState<Statement[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [actioning, setActioning] = useState<string | null>(null);
-  const [reparseAllRunning, setReparseAllRunning] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [passwordInputs, setPasswordInputs] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    getStatements()
-      .then((data) => {
-        if (!cancelled) setStatements(data.statements);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          toast.error('Failed to load statements');
-          setStatements([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [open]);
-
-  const fmt = (d: string) => {
-    if (!d) return '—';
-    const date = new Date(d + 'T00:00:00');
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  const extractErrorMsg = (e: unknown, fallback: string): string => {
-    if (e && typeof e === 'object' && 'response' in e) {
-      const resp = (e as { response?: { data?: { detail?: string } } }).response;
-      if (resp?.data?.detail) return resp.data.detail;
-    }
-    if (e instanceof Error) return e.message;
-    return fallback;
-  };
-
-  const handleReparseAll = async () => {
-    setReparseAllRunning(true);
-    try {
-      const result = await reparseAllStatements();
-      toast.success(`Reparse complete: ${result.success} succeeded, ${result.failed} failed, ${result.skipped} skipped`);
-      const res = await getStatements();
-      setStatements(res.statements);
-    } catch (e) {
-      toast.error(extractErrorMsg(e, 'Reparse all failed'));
-    } finally {
-      setReparseAllRunning(false);
-    }
-  };
-
-  const handleReparse = async (id: string) => {
-    setActioning(id);
-    try {
-      const result = await reparseStatement(id);
-      if (result.status === 'success') {
-        toast.success(`Reparsed ${result.count ?? 0} transactions`);
-      const res = await getStatements();
-      setStatements(res.statements);
-      } else {
-        toast.error('Reparse failed');
-      }
-    } catch (e) {
-      toast.error(extractErrorMsg(e, 'Reparse failed'));
-    } finally {
-      setActioning(null);
-    }
-  };
-
-  const handleRemove = async (id: string) => {
-    setConfirmDeleteId(id);
-  };
-
-  const executeRemove = async () => {
-    if (!confirmDeleteId) return;
-    setActioning(confirmDeleteId);
-    try {
-      await deleteStatement(confirmDeleteId);
-      toast.success('Statement deleted');
-      setStatements((prev) => prev.filter((s) => s.id !== confirmDeleteId));
-    } catch (e) {
-      toast.error(extractErrorMsg(e, 'Delete failed'));
-    } finally {
-      setActioning(null);
-      setConfirmDeleteId(null);
-    }
-  };
-
-  const handlePasswordSubmit = async (stmtId: string) => {
-    const pwd = (passwordInputs[stmtId] ?? '').trim();
-    if (!pwd) return;
-    setActioning(stmtId);
-    try {
-      const result = await retryWithPassword(stmtId, pwd);
-      if (result.status === 'success') {
-        toast.success(`Unlocked and imported ${result.count ?? 0} transactions`);
-        setPasswordInputs((prev) => { const next = { ...prev }; delete next[stmtId]; return next; });
-      const res = await getStatements();
-      setStatements(res.statements);
-      } else {
-        toast.error(result.message ?? 'Could not unlock with this password');
-      }
-    } catch {
-      toast.error('Failed to unlock statement');
-    } finally {
-      setActioning(null);
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <ModalOverlay>
-      <ModalBackdrop onClick={onClose} />
-      <ElevatedCard
-        backgroundColor={colorPalette.black[90]}
-        edgeColors={TRANSPARENT_ELEVATED_CARD_EDGES}
-        style={{
-          padding: 0,
-          position: 'relative',
-          width: '100%',
-          maxWidth: 560,
-          maxHeight: '80vh',
-          display: 'block',
-          backgroundColor: 'transparent',
-          overflow: 'auto',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-          }}
-        >
-          <Typography fontType={FontType.BODY} fontSize={18} fontWeight={FontWeights.BOLD} color={mainColors.white}>
-            Reparse / Remove Statements
-          </Typography>
-          <CloseButton onClick={onClose} variant="modal" />
-        </div>
-
-        <div style={{ padding: 20 }}>
-          <ButtonWithIcon
-            icon={RefreshCw}
-            variant="secondary"
-            kind="elevated"
-            size="small"
-            colorMode="dark"
-            onClick={handleReparseAll}
-            disabled={reparseAllRunning || loading || statements.length === 0}
-            style={{ marginBottom: 20 }}
-            gap={6}
-            justifyContent="center"
-            iconProps={{ className: reparseAllRunning ? 'animate-spin' : undefined }}
-          >
-            {reparseAllRunning ? 'Reparsing...' : 'Reparse All'}
-          </ButtonWithIcon>
-
-          {loading ? (
-            <Typography fontType={FontType.BODY} fontSize={14} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              Loading...
-            </Typography>
-          ) : statements.length === 0 ? (
-            <Typography fontType={FontType.BODY} fontSize={14} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              No statements imported yet.
-            </Typography>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {[...statements]
-                .sort((a, b) => {
-                  const priority = (s: Statement) => s.status === 'password_needed' ? 0 : s.status === 'parse_error' ? 1 : 2;
-                  return priority(a) - priority(b);
-                })
-                .map((s) => {
-                  const isError = s.status === 'parse_error';
-                  const needsPassword = s.status === 'password_needed';
-                  const sourceLabel = s.source === 'BANK' ? 'BANK' : 'CC';
-                  return (
-                    <div
-                      key={s.id}
-                      style={{
-                        padding: '14px 16px',
-                        border: isError || needsPassword
-                          ? '1px solid rgba(229,161,0,0.4)'
-                          : '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: 12,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                        background: isError || needsPassword ? 'rgba(229,161,0,0.04)' : 'transparent',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Column alignItems="stretch" gap={5}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Typography as="span" fontType={FontType.BODY} fontSize={10} fontWeight={FontWeights.BOLD} color={sourceLabel === 'BANK' ? colorPalette.info[500] : colorPalette.rss[500]} style={{ padding: '1px 6px', borderRadius: 4, background: sourceLabel === 'BANK' ? 'rgba(59,130,246,0.15)' : 'rgba(255,135,68,0.15)' }}>
-                              {sourceLabel}
-                            </Typography>
-                            <Typography fontType={FontType.BODY} fontSize={14} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-                              {s.bank.toUpperCase()} {s.cardLast4 ? `...${s.cardLast4}` : ''}
-                            </Typography>
-                            {isError && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: 'rgba(229,161,0,0.15)', whiteSpace: 'nowrap' }}>
-                                <AlertTriangle size={11} />
-                                <Typography as="span" fontType={FontType.BODY} fontSize={11} fontWeight={FontWeights.SEMI_BOLD} color={colorPalette.warning[500]}>
-                                  Parse Error
-                                </Typography>
-                              </span>
-                            )}
-                            {needsPassword && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: 'rgba(255,135,68,0.15)', whiteSpace: 'nowrap' }}>
-                                <Lock size={11} />
-                                <Typography as="span" fontType={FontType.BODY} fontSize={11} fontWeight={FontWeights.SEMI_BOLD} color={colorPalette.rss[500]}>
-                                  Password Required
-                                </Typography>
-                              </span>
-                            )}
-                          </div>
-                          {needsPassword ? (
-                            <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color={colorPalette.rss[500]} style={{ marginTop: 2 }}>
-                              Enter password for this statement to be processed
-                            </Typography>
-                          ) : isError ? (
-                            <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color="rgba(229,161,0,0.7)" style={{ marginTop: 2 }}>
-                              Could not extract data from this PDF. Try reparsing.
-                            </Typography>
-                          ) : (
-                            <>
-                              <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)" style={{ marginTop: 2 }}>
-                                Period: {fmt(s.periodStart)} – {fmt(s.periodEnd)}
-                              </Typography>
-                              <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)" style={{ marginTop: 2 }}>
-                                {s.transactionCount} transactions
-                              </Typography>
-                            </>
-                          )}
-                        </Column>
-                        <Column alignItems="center" gap={2}>
-                          <Row alignItems='center' justifyContent="space-evenly" gap={20}>
-                            {!needsPassword && (
-                              <ButtonWithIcon
-                                icon={RefreshCw}
-                                variant="primary"
-                                kind="elevated"
-                                size="small"
-                                colorMode="dark"
-                                onClick={() => handleReparse(s.id)}
-                                disabled={!!actioning}
-                                gap={4}
-                                justifyContent="center"
-                                style={{ minWidth: 'auto', marginRight: 10 }}
-                              >
-                                {isError ? 'Retry' : 'Refresh'}
-                              </ButtonWithIcon>
-                            )}
-                            <ButtonWithIcon
-                              icon={Trash2}
-                              variant="secondary"
-                              kind="elevated"
-                              size="small"
-                              colorMode="dark"
-                              onClick={() => handleRemove(s.id)}
-                              disabled={!!actioning}
-                              gap={4}
-                              justifyContent="center"
-                              style={{ minWidth: 'auto', color: mainColors.red, borderColor: 'rgba(238,77,55,0.4)' }}
-                            >
-                              Remove
-                            </ButtonWithIcon>
-                          </Row>
-                        </Column>
-                      </div>
-                      {needsPassword && (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                          <InputField
-                            colorMode="dark"
-                            type="password"
-                            placeholder="Statement password"
-                            value={passwordInputs[s.id] ?? ''}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                              setPasswordInputs((prev) => ({ ...prev, [s.id]: e.target.value }))
-                            }
-                            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
-                              e.key === 'Enter' && handlePasswordSubmit(s.id)
-                            }
-                            style={{ flex: 1, backgroundColor: colorPalette.black[100], border: '1px solid rgba(255,255,255,0.2)', borderRadius: 0, padding: '6px 12px', fontSize: 14, color: '#ffffff' }}
-                          />
-                          <Button variant="primary" kind="elevated" size="small" colorMode="dark" onClick={() => handlePasswordSubmit(s.id)} disabled={!!actioning || !(passwordInputs[s.id] ?? '').trim()}>
-                            Unlock
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
-      </ElevatedCard>
-      <ConfirmModal
-        open={confirmDeleteId !== null}
-        title="Delete Statement"
-        message="Delete this statement and all its transactions? This cannot be undone."
-        confirmLabel="Delete"
-        variant="danger"
-        onConfirm={executeRemove}
-        onCancel={() => setConfirmDeleteId(null)}
-      />
     </ModalOverlay>
   );
 }
@@ -1650,156 +1316,18 @@ export function DefineCategoriesModal({ open, onClose }: { open: boolean; onClos
   );
 }
 
-function GmailAutosyncModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [status, setStatus] = useState<GmailStatusResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    getGmailStatus()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  const handleConnect = async () => {
-    try {
-      const { auth_url: authUrl } = await startGmailAuth();
-      window.location.href = authUrl;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not start Gmail sign-in');
-    }
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await disconnectGmail();
-      toast.success('Gmail disconnected');
-      setStatus(await getGmailStatus());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Disconnect failed');
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <ModalOverlay>
-      <ModalBackdrop onClick={onClose} />
-      <ElevatedCard
-        backgroundColor={colorPalette.black[90]}
-        edgeColors={TRANSPARENT_ELEVATED_CARD_EDGES}
-        style={{
-          padding: 0,
-          position: 'relative',
-          width: '100%',
-          maxWidth: 480,
-          maxHeight: '80vh',
-          display: 'block',
-          backgroundColor: 'transparent',
-          overflow: 'auto',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-          }}
-        >
-          <Typography fontType={FontType.BODY} fontSize={18} fontWeight={FontWeights.BOLD} color={mainColors.white}>
-            Autosync statements
-          </Typography>
-          <CloseButton onClick={onClose} variant="modal" />
-        </div>
-        <div style={{ padding: 20 }}>
-          <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.7)" style={{ marginBottom: 16 }}>
-            Optional: connect Gmail with read-only access. Burnrate searches for statement-like attachments and saves them to your watch folder (or uploads), then runs the same import pipeline as manual drops. You can disconnect anytime.
-          </Typography>
-          {loading && (
-            <Typography fontType={FontType.BODY} fontSize={13} color="rgba(255,255,255,0.5)">
-              Loading…
-            </Typography>
-          )}
-          {!loading && status && !status.configured && (
-            <Typography fontType={FontType.BODY} fontSize={13} color={colorPalette.rss[400]}>
-              Gmail autosync is not enabled on this server (missing <code style={{ fontSize: 12 }}>GOOGLE_OAUTH_CLIENT_ID</code>).
-            </Typography>
-          )}
-          {!loading && status?.configured && (
-            <Row style={{ gap: 12, marginTop: 8 }}>
-              {status.connected ? (
-                <Button kind="primary" colorMode="dark" onClick={() => void handleDisconnect()}>
-                  Disconnect Gmail
-                </Button>
-              ) : (
-                <Button kind="primary" colorMode="dark" onClick={() => void handleConnect()}>
-                  Connect Gmail
-                </Button>
-              )}
-            </Row>
-          )}
-        </div>
-      </ElevatedCard>
-    </ModalOverlay>
-  );
-}
-
-/** Hide entry point only; `ReparseRemoveModal` code path stays in the bundle. */
-const SHOW_REPARSE_REMOVE_FEATURE_CARD = false;
-
 export function Customize() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
-  const [reparseModalOpen, setReparseModalOpen] = useState(false);
   const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
-  const [gmailModalOpen, setGmailModalOpen] = useState(false);
-  const [insightsModalOpen, setInsightsModalOpen] = useState(false);
   const [paymentRemindersModalOpen, setPaymentRemindersModalOpen] = useState(false);
   const [dataModalOpen, setDataModalOpen] = useState(false);
-  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
-
-  useEffect(() => {
-    const g = searchParams.get('gmail');
-    if (g === 'connected') {
-      toast.success('Gmail connected');
-      setSearchParams({}, { replace: true });
-    } else if (g === 'error') {
-      toast.error('Gmail connection failed');
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
 
   return (
     <PageLayout>
       <Navbar activeTab="customize" onTabChange={(tab) => navigate(`/${tab}`)} />
       <Content>
         <CardsGrid>
-          <FeatureCard onClick={() => setGmailModalOpen(true)}>
-            <Mail size={24} color={colorPalette.info[500]} />
-            <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-              Autosync statements
-            </Typography>
-            <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              Optional Gmail import for statement attachments (read-only OAuth).
-            </Typography>
-          </FeatureCard>
-
           <FeatureCard onClick={() => setTagsModalOpen(true)}>
             <TagIcon size={24} color={colorPalette.rss[500]} />
             <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
@@ -1810,18 +1338,6 @@ export function Customize() {
             </Typography>
           </FeatureCard>
 
-          {SHOW_REPARSE_REMOVE_FEATURE_CARD && (
-            <FeatureCard onClick={() => setReparseModalOpen(true)}>
-              <RefreshCw size={24} color={colorPalette.rss[500]} />
-              <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-                Reparse/Remove Statements
-              </Typography>
-              <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-                Re-import or delete imported statements.
-              </Typography>
-            </FeatureCard>
-          )}
-
           <FeatureCard onClick={() => setCategoriesModalOpen(true)}>
             <Palette size={24} color={colorPalette.rss[500]} />
             <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
@@ -1829,16 +1345,6 @@ export function Customize() {
             </Typography>
             <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
               Create and edit categories for transaction categorization.
-            </Typography>
-          </FeatureCard>
-
-          <FeatureCard onClick={() => setInsightsModalOpen(true)}>
-            <Lightbulb size={24} color={colorPalette.rss[500]} />
-            <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-              LLM Insights
-            </Typography>
-            <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              Ask questions about your spending in natural language.
             </Typography>
           </FeatureCard>
 
@@ -1861,26 +1367,12 @@ export function Customize() {
               Backup or restore your database and statements.
             </Typography>
           </FeatureCard>
-
-          <FeatureCard onClick={() => setFeedbackModalOpen(true)}>
-            <MessageSquarePlus size={24} color={colorPalette.rss[500]} />
-            <Typography fontType={FontType.BODY} fontSize={16} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-              Feedback / Bugs / Feature Request
-            </Typography>
-            <Typography fontType={FontType.BODY} fontSize={13} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              Report a bug or suggest a feature.
-            </Typography>
-          </FeatureCard>
         </CardsGrid>
 
-        <GmailAutosyncModal open={gmailModalOpen} onClose={() => setGmailModalOpen(false)} />
         <DefineTagsModal open={tagsModalOpen} onClose={() => setTagsModalOpen(false)} />
-        <ReparseRemoveModal open={reparseModalOpen} onClose={() => setReparseModalOpen(false)} />
         <DefineCategoriesModal open={categoriesModalOpen} onClose={() => setCategoriesModalOpen(false)} />
-        <InsightsSettingsModal open={insightsModalOpen} onClose={() => setInsightsModalOpen(false)} />
         <PaymentRemindersModal open={paymentRemindersModalOpen} onClose={() => setPaymentRemindersModalOpen(false)} />
         <DataManagementModal open={dataModalOpen} onClose={() => setDataModalOpen(false)} />
-        <FeedbackModal open={feedbackModalOpen} onClose={() => setFeedbackModalOpen(false)} />
       </Content>
     </PageLayout>
   );

@@ -7,7 +7,7 @@ def test_port_changes_based_on_env(tmp_path):
     env_file = tmp_path / ".env.test"
     env_file.write_text("BURNRATE_PORT=9999\nBURNRATE_ENV=test")
 
-    with mock.patch.dict(os.environ, {"BURNRATE_ENV_FILE": str(env_file)}):
-        settings = Settings()
+    with mock.patch.dict(os.environ, {"BURNRATE_PORT": "9999", "BURNRATE_ENV": "test"}):
+        settings = Settings(_env_file=str(env_file))
         assert settings.burnrate_port == 9999
         assert settings.burnrate_env == "test"

@@ -140,7 +140,6 @@ burnrate/
 │       ├── hooks/useApi.ts
 │       └── lib/              # api.ts, types.ts, utils.ts
 ├── src-tauri/               # Tauri v2 desktop wrapper
-├── apps-script/Code.gs      # Google Apps Script for Gmail statement download
 ├── tests/                   # conftest.py, test_api.py, test_parsers.py, test_browser.py
 ├── scripts/                 # build-macos.sh, burnrate.iss, launch.py
 ├── Dockerfile               # Multi-stage: Node frontend + Python runtime

@@ -21,14 +21,12 @@ from backend.services.transaction_query import parse_bank_accounts_param
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-def _months_in_range(from_date: Optional[date], to_date: Optional[date]) -> int:
-    """Count the number of calendar months spanned by a date range."""
+def _months_in_range(from_date: Optional[date], to_date: Optional[date]) -> float:
+    """Months spanned by a date range, counting partial months as a fraction."""
     if not from_date or not to_date:
-        return 1
-    return max(
-        (to_date.year - from_date.year) * 12 + (to_date.month - from_date.month) + 1,
-        1,
-    )
+        return 1.0
+    days = max((to_date - from_date).days + 1, 1)
+    return max(days / 30.44, 1.0)
 
 
 def _parse_filter_params(
@@ -237,7 +235,7 @@ def analytics_summary(
         ],
         "creditLimit": credit_limit,
         "avgMonthlySpend": avg_monthly_spend,
-        "monthsInRange": months,
+        "monthsInRange": max(1, round(months)),
     }
     if credit_limit_by_currency is not None:
         out["creditLimitByCurrency"] = credit_limit_by_currency
@@ -444,33 +442,40 @@ def statement_periods(
     statements = q.order_by(Statement.period_start.desc()).all()
 
     from backend.models.models import Transaction
-    from decimal import Decimal, ROUND_HALF_UP
-    from datetime import date
+    from sqlalchemy import case, func
 
     periods = []
     if not statements:
         return {"periods": periods}
 
-    min_date = min([s.period_start for s in statements if s.period_start] or [date.today()])
-    max_date = max([s.period_end for s in statements if s.period_end] or [date.today()])
-
-    txns = db.query(Transaction).filter(
-        Transaction.date >= min_date,
-        Transaction.date <= max_date,
-        Transaction.category != "cc_payment"
-    ).all()
+    statement_ids = [s.id for s in statements]
+    spend_rows = (
+        db.query(
+            Transaction.statement_id,
+            func.sum(
+                case(
+                    (Transaction.type == "debit", Transaction.amount),
+                    else_=-Transaction.amount,
+                )
+            ),
+        )
+        .filter(
+            Transaction.statement_id.in_(statement_ids),
+            Transaction.category != "cc_payment",
+        )
+        .group_by(Transaction.statement_id)
+        .all()
+    )
+    spend_by_statement = {sid: amount or 0.0 for sid, amount in spend_rows}
 
     for s in statements:
         cur = (getattr(s, "currency", None) or "INR").upper()[:3]
         if s.period_start and s.period_end:
-            net_spend = sum(
-                (float(t.amount) if t.type == "debit" else -float(t.amount))
-                for t in txns
-                if t.bank == s.bank
-                and (not s.card_last4 or t.card_last4 == s.card_last4)
-                and s.period_start <= t.date <= s.period_end
+            net_spend = float(
+                Decimal(str(spend_by_statement.get(s.id, 0.0))).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
             )
-            net_spend = float(Decimal(str(net_spend)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         else:
             net_spend = s.total_spend
         periods.append({

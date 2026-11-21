@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from backend.models.models import Transaction, TransactionTag
+from backend.models.models import TagDefinition, Transaction, TransactionTag
 from backend.services.transaction_query import apply_source_account_filters
 
 
@@ -48,7 +48,12 @@ def _apply_filters(
     if amount_max is not None:
         q = q.filter(Transaction.amount <= amount_max)
     if tags:
-        tag_subq = select(TransactionTag.transaction_id).where(TransactionTag.tag.in_(tags)).distinct()
+        tag_subq = (
+            select(TransactionTag.transaction_id)
+            .join(TagDefinition, TransactionTag.tag_id == TagDefinition.id)
+            .where(TagDefinition.name.in_(tags))
+            .distinct()
+        )
         q = q.filter(Transaction.id.in_(tag_subq))
     return q
 
@@ -230,18 +235,28 @@ def get_category_breakdown(
     bank_pairs: Optional[List[Tuple[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Category amounts and percentages (per currency when multiple)."""
+    amount_expr = (
+        func.sum(Transaction.amount)
+        if direction in ("incoming", "outgoing")
+        else func.sum(
+            case(
+                (Transaction.type == "debit", Transaction.amount),
+                else_=-Transaction.amount,
+            )
+        )
+    )
     q = (
         db.query(
             Transaction.currency,
             Transaction.category,
-            func.sum(Transaction.amount).label("amount"),
+            amount_expr.label("amount"),
             func.count(Transaction.id).label("count"),
         )
         .filter(Transaction.category != "cc_payment")
     )
     if direction == "incoming":
         q = q.filter(Transaction.type == "credit")
-    else:
+    elif direction == "outgoing":
         q = q.filter(Transaction.type == "debit")
     q = _date_filter(q, from_date, to_date)
     q = apply_source_account_filters(q, source, card_ids, bank_pairs or [])
@@ -386,18 +401,28 @@ def get_top_merchants(
     bank_pairs: Optional[List[Tuple[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Top merchants by spend (per currency when multiple)."""
+    amount_expr = (
+        func.sum(Transaction.amount)
+        if direction in ("incoming", "outgoing")
+        else func.sum(
+            case(
+                (Transaction.type == "debit", Transaction.amount),
+                else_=-Transaction.amount,
+            )
+        )
+    )
     q = (
         db.query(
             Transaction.currency,
             Transaction.merchant,
-            func.sum(Transaction.amount).label("spend"),
+            amount_expr.label("spend"),
             func.count(Transaction.id).label("count"),
         )
         .filter(Transaction.category != "cc_payment")
     )
     if direction == "incoming":
         q = q.filter(Transaction.type == "credit")
-    else:
+    elif direction == "outgoing":
         q = q.filter(Transaction.type == "debit")
     q = _date_filter(q, from_date, to_date)
     q = apply_source_account_filters(q, source, card_ids, bank_pairs or [])

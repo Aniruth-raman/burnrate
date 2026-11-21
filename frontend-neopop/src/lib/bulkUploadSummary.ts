@@ -25,7 +25,7 @@ function outcomeFallbackMessage(status: string): string {
     case 'parse_error':
       return 'Could not parse this statement';
     case 'password_needed':
-      return 'Password required — try uploading this file alone';
+      return 'Password required — open Statements to enter it';
     case 'error':
       return 'Processing failed';
     default:

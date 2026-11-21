@@ -26,7 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.models.database import SessionLocal, init_db
 from backend.models.models import CategoryDefinition, Settings
 from backend.config import settings
-from backend.routers import analytics, cards, categories, data, due_reminders, feedback, gmail, insights, milestones, offers, settings as backend_settings, statements, tags, transactions
+from backend.routers import analytics, cards, categories, data, due_reminders, settings as backend_settings, statements, tags, transactions
 
 logger = logging.getLogger(__name__)
 
@@ -88,73 +88,6 @@ async def lifespan(app: FastAPI):
             daemon=True,
         ).start()
 
-    def _gmail_startup_sync() -> None:
-        import time
-
-        time.sleep(2)
-        db = SessionLocal()
-        try:
-            from backend.models.models import OAuthCredential
-
-            if not db.query(OAuthCredential).filter(OAuthCredential.provider == "google_gmail").first():
-                return
-            from backend.services import gmail_sync as _gs
-
-            _gs.run_gmail_sync(db, force=False)
-        except Exception:
-            logger.exception("Gmail startup sync failed")
-        finally:
-            db.close()
-
-    threading.Thread(target=_gmail_startup_sync, name="gmail-startup-sync", daemon=True).start()
-
-    # Offer sync background loop
-    async def _offer_sync_loop() -> None:
-        import asyncio
-
-        from backend.config import OFFER_SYNC_ENABLED, OFFER_SYNC_INTERVAL
-
-        await asyncio.sleep(5)  # let app fully start
-        while True:
-            if OFFER_SYNC_ENABLED:
-                def _do_sync():
-                    session = SessionLocal()
-                    try:
-                        from backend.services.offer_fetcher import sync_offers
-                        sync_offers(session)
-                        logger.info("Offer sync completed")
-                    except Exception:
-                        logger.exception("Offer sync failed")
-                    finally:
-                        session.close()
-                await asyncio.to_thread(_do_sync)
-            await asyncio.sleep(OFFER_SYNC_INTERVAL)
-
-    import asyncio
-    asyncio.create_task(_offer_sync_loop(), name="offer-sync")
-
-    # Milestone sync background loop
-    def _milestone_sync_loop() -> None:
-        import time
-
-        from backend.config import MILESTONE_SYNC_ENABLED, MILESTONE_SYNC_INTERVAL
-
-        time.sleep(8)  # let app fully start, after offer sync begins
-        while True:
-            if MILESTONE_SYNC_ENABLED:
-                session = SessionLocal()
-                try:
-                    from backend.services.milestone_fetcher import sync_milestone_definitions
-                    sync_milestone_definitions(session)
-                    logger.info("Milestone sync completed")
-                except Exception:
-                    logger.exception("Milestone sync failed")
-                finally:
-                    session.close()
-            time.sleep(MILESTONE_SYNC_INTERVAL)
-
-    threading.Thread(target=_milestone_sync_loop, name="milestone-sync", daemon=True).start()
-
     # Browser auto-open for Homebrew distribution only
     def _open_browser_on_startup() -> None:
         """Open browser when server starts up (Homebrew only)."""
@@ -197,12 +130,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://localhost:11434;"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         return response
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+# The API binds to loopback, but any web page can still reach it. Reject
+# foreign Host headers so a DNS-rebinding page cannot become same-origin.
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["localhost", "127.0.0.1", "::1", "tauri.localhost", "testserver"],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -227,12 +169,7 @@ app.include_router(transactions.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
-app.include_router(gmail.router, prefix="/api")
-app.include_router(offers.router, prefix="/api")
-app.include_router(milestones.router, prefix="/api")
-app.include_router(insights.router, prefix="/api")
 app.include_router(data.router, prefix="/api")
-app.include_router(feedback.router, prefix="/api")
 
 _project_root_for_static = Path(__file__).resolve().parent.parent
 _static_candidates = [

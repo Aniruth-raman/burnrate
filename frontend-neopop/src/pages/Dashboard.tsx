@@ -8,7 +8,7 @@ import { SpendsChart } from '@/components/SpendsChart';
 import { TransactionRow } from '@/components/TransactionRow';
 import { FilterModal } from '@/components/FilterModal';
 import { useFilters } from '@/contexts/FilterContext';
-import { useAnalytics, useTransactions, useCards, useMilestones } from '@/hooks/useApi';
+import { useAnalytics, useTransactions, useCards } from '@/hooks/useApi';
 import { uploadStatement, uploadStatementsBulk, getStatementPeriods } from '@/lib/api';
 import { notifyBulkUploadToasts, syntheticBulkUploadFailure } from '@/lib/bulkUploadSummary';
 import { formatCurrency } from '@/lib/utils';
@@ -100,56 +100,6 @@ const ClickableSpend = styled.div`
     transform: translateY(0) scale(0.99);
     box-shadow: none;
   }
-`;
-
-const MilestonesList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-`;
-
-const MilestoneCard = styled.div`
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 16px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-`;
-
-const MilestoneHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-`;
-
-const ProgressBarContainer = styled.div`
-  width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  overflow: hidden;
-`;
-
-const ProgressBarFill = styled.div<{ $percent: number }>`
-  height: 100%;
-  width: ${(p) => p.$percent}%;
-  background: linear-gradient(90deg, #10B981 0%, #06C270 100%);
-  border-radius: 3px;
-`;
-
-const MilestoneFooter = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
 `;
 
 function countActiveFilters(filters: ReturnType<typeof useFilters>['filters']): number {
@@ -310,6 +260,7 @@ function DashboardContent() {
     from: filters.dateRange.from,
     to: filters.dateRange.to,
     category: filters.selectedCategories.length === 1 ? filters.selectedCategories[0] : undefined,
+    categories: filters.selectedCategories.length > 0 ? filters.selectedCategories.join(',') : undefined,
     tags: filters.selectedTags?.length > 0 ? filters.selectedTags.join(',') : undefined,
     direction: filters.direction !== 'all' ? filters.direction : undefined,
     source: filters.source !== 'all' ? filters.source : undefined,
@@ -318,6 +269,7 @@ function DashboardContent() {
   };
 
   const { summary, trends, trendsByCurrency, loading } = useAnalytics({
+    statementIds: filters.statementIds,
     from: filters.dateRange.from,
     to: filters.dateRange.to,
     cards: filters.selectedCards.length > 0 ? filters.selectedCards.join(',') : undefined,
@@ -336,7 +288,6 @@ function DashboardContent() {
     offset: 0,
   });
   const { cards, loading: cardsLoading } = useCards();
-  const { milestones, loading: milestonesLoading } = useMilestones();
 
   const safeCards = Array.isArray(cards) ? cards : [];
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -576,48 +527,6 @@ function DashboardContent() {
             </Typography>
           ) : (
             <SpendsChart data={safeTrends} />
-          )}
-        </Section>
-
-        <Section>
-          <SectionHeader>
-            <Typography fontType={FontType.BODY} fontSize={18} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-              Milestones & Goals
-            </Typography>
-            <StyledLink to="/milestones">View all</StyledLink>
-          </SectionHeader>
-          {milestonesLoading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} height="100px" />
-              ))}
-            </div>
-          ) : milestones.length === 0 ? (
-            <Typography fontType={FontType.BODY} fontSize={14} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-              No milestones yet. Create one to track your spending goals.
-            </Typography>
-          ) : (
-            <MilestonesList>
-              {milestones.slice(0, 3).map((milestone) => (
-                <MilestoneCard key={milestone.id} onClick={() => navigate('/milestones')}>
-                  <MilestoneHeader>
-                    <Typography fontType={FontType.BODY} fontSize={14} fontWeight={FontWeights.SEMI_BOLD} color={mainColors.white}>
-                      {milestone.title}
-                    </Typography>
-                    <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color="rgba(255,255,255,0.5)">
-                      {milestone.percent.toFixed(1)}%
-                    </Typography>
-                  </MilestoneHeader>
-                  <ProgressBarContainer>
-                    <ProgressBarFill $percent={milestone.percent} />
-                  </ProgressBarContainer>
-                  <MilestoneFooter>
-                    <span>₹{milestone.currentAmount.toLocaleString()} / ₹{milestone.targetAmount.toLocaleString()}</span>
-                    <span>{milestone.daysLeft} days left</span>
-                  </MilestoneFooter>
-                </MilestoneCard>
-              ))}
-            </MilestonesList>
           )}
         </Section>
 

@@ -24,6 +24,16 @@ from tests.synthetic_profile import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+_MISSING_PDFS = [
+    name
+    for name in (HDFC_STATEMENT, AXIS_STATEMENT, ICICI_STATEMENT)
+    if not (FIXTURES / name).exists()
+]
+pytestmark = pytest.mark.skipif(
+    bool(_MISSING_PDFS),
+    reason=f"statement PDF fixtures are gitignored and missing: {', '.join(_MISSING_PDFS)}",
+)
+
 STATEMENT_FILES = [
     (HDFC_STATEMENT, "hdfc", LAST4_HDFC, 35),
     (AXIS_STATEMENT, "axis", LAST4_AXIS, 12),

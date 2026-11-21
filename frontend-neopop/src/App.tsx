@@ -8,8 +8,6 @@ import { Statements } from '@/pages/Statements';
 import { Transactions } from '@/pages/Transactions';
 import { Analytics } from '@/pages/Analytics';
 import { Customize } from '@/pages/Customize';
-import { Offers } from '@/pages/Offers';
-import { Milestones } from '@/pages/Milestones';
 import { FilterProvider } from '@/contexts/FilterContext';
 import { useSettings, useProcessingLogPoller } from '@/hooks/useApi';
 import { PaymentRemindersModal } from '@/components/PaymentRemindersModal';
@@ -19,8 +17,6 @@ import {
   recordDueReminderAutoShown,
   localCalendarDateISO,
 } from '@/lib/api';
-import { InsightsFAB } from '@/components/InsightsFAB';
-import { InsightsPanel } from '@/components/InsightsPanel';
 
 function RootRedirect() {
   const { settings, loading } = useSettings();
@@ -105,19 +101,6 @@ function PaymentReminderAutoGate() {
 }
 
 export default function App() {
-  const [insightsOpen, setInsightsOpen] = useState(false);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
-        e.preventDefault();
-        setInsightsOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   return (
     <BrowserRouter>
       <FilterProvider>
@@ -134,11 +117,7 @@ export default function App() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/customize" element={<Customize />} />
-        <Route path="/offers" element={<Offers />} />
-        <Route path="/milestones" element={<Milestones />} />
       </Routes>
-      <InsightsFAB onClick={() => setInsightsOpen(true)} />
-      <InsightsPanel open={insightsOpen} onClose={() => setInsightsOpen(false)} />
       </FilterProvider>
     </BrowserRouter>
   );

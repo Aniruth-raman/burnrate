@@ -5,11 +5,7 @@ import type {
   Category,
   CategoryBreakdown,
   MerchantSpend,
-  Milestone,
-  MilestoneDefinition,
   MonthlyTrend,
-  Offer,
-  OfferSyncStatus,
   Source,
   Statement,
   Transaction,
@@ -61,6 +57,7 @@ export interface GetTransactionsParams {
   from?: string;
   to?: string;
   category?: Category;
+  categories?: string;
   search?: string;
   tags?: string;
   direction?: string;
@@ -749,205 +746,6 @@ export async function deleteTagDefinition(tagId: string): Promise<{ status: stri
   return data;
 }
 
-export async function reparseAllStatements(): Promise<{ status: string; total: number; success: number; failed: number; skipped: number }> {
-  const { data } = await api.post<{ status: string; total: number; success: number; failed: number; skipped: number }>('/statements/reparse-all', {}, { timeout: 300000 });
-  _bankAccountsCachePromise = null;
-  return data;
-}
-
-export interface GmailStatusResponse {
-  configured: boolean;
-  connected: boolean;
-  last_sync: string | null;
-}
-
-export async function getGmailStatus(): Promise<GmailStatusResponse> {
-  const { data } = await api.get<GmailStatusResponse>('/gmail/status');
-  return data;
-}
-
-export async function startGmailAuth(): Promise<{ auth_url: string }> {
-  const { data } = await api.post<{ auth_url: string }>('/gmail/auth/start');
-  return data;
-}
-
-export async function disconnectGmail(): Promise<{ status: string }> {
-  const { data } = await api.post<{ status: string }>('/gmail/disconnect');
-  return data;
-}
-
-export async function triggerGmailSync(): Promise<{
-  status: string;
-  messages_scanned?: number;
-  attachments_queued?: number;
-  reason?: string;
-  seconds_remaining?: number;
-}> {
-  const { data } = await api.post('/gmail/sync', {}, { timeout: 120000 });
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// Offers
-// ---------------------------------------------------------------------------
-
-export interface GetOffersParams {
-  cards?: string;
-  bank?: string;
-  banks?: string;
-  search?: string;
-  category?: string;
-  categories?: string;
-  offer_type?: string;
-  source?: string;
-  include_expired?: boolean;
-  include_hidden?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-export async function getOffers(
-  params: GetOffersParams = {},
-): Promise<{ offers: Offer[]; total: number; lastSyncAt: string | null }> {
-  const { data } = await api.get('/offers', { params });
-  return data;
-}
-
-export async function getOffer(id: string): Promise<Offer> {
-  const { data } = await api.get(`/offers/${id}`);
-  return data;
-}
-
-export async function createOffer(body: {
-  title: string;
-  description?: string;
-  merchant?: string;
-  discount_text?: string;
-  offer_type?: string;
-  bank?: string;
-  category?: string;
-  valid_from?: string;
-  valid_until?: string;
-  min_transaction?: number;
-  max_discount?: number;
-}): Promise<Offer> {
-  const { data } = await api.post('/offers', body);
-  return data;
-}
-
-export async function updateOffer(
-  id: string,
-  body: Partial<{
-    title: string;
-    description: string;
-    merchant: string;
-    discount_text: string;
-    offer_type: string;
-    bank: string;
-    category: string;
-    valid_from: string;
-    valid_until: string;
-  }>,
-): Promise<Offer> {
-  const { data } = await api.put(`/offers/${id}`, body);
-  return data;
-}
-
-export async function deleteOffer(id: string): Promise<void> {
-  await api.delete(`/offers/${id}`);
-}
-
-export async function hideOffer(id: string): Promise<Offer> {
-  const { data } = await api.post(`/offers/${id}/hide`);
-  return data;
-}
-
-export async function unhideOffer(id: string): Promise<Offer> {
-  const { data } = await api.post(`/offers/${id}/unhide`);
-  return data;
-}
-
-export async function triggerOfferSync(): Promise<{ status: string }> {
-  const { data } = await api.post('/offers/sync');
-  return data;
-}
-
-export async function getOfferSyncStatus(): Promise<OfferSyncStatus> {
-  const { data } = await api.get('/offers/sync-status');
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// Milestones
-// ---------------------------------------------------------------------------
-
-export async function getMilestones(params: {
-  card_id?: string;
-  include_archived?: boolean;
-} = {}): Promise<{ milestones: Milestone[]; total: number }> {
-  const { data } = await api.get('/milestones', { params });
-  return data;
-}
-
-export async function getMilestone(id: string): Promise<Milestone> {
-  const { data } = await api.get(`/milestones/${id}`);
-  return data;
-}
-
-export async function createMilestone(body: {
-  card_id: string;
-  title: string;
-  target_amount: number;
-  period_kind?: string;
-  period_config?: string;
-  milestone_type?: string;
-  reward_description?: string;
-}): Promise<Milestone> {
-  const { data } = await api.post('/milestones', body);
-  return data;
-}
-
-export async function updateMilestone(
-  id: string,
-  body: Partial<{
-    title: string;
-    target_amount: number;
-    period_kind: string;
-    milestone_type: string;
-    reward_description: string;
-  }>,
-): Promise<Milestone> {
-  const { data } = await api.put(`/milestones/${id}`, body);
-  return data;
-}
-
-export async function deleteMilestone(id: string): Promise<void> {
-  await api.delete(`/milestones/${id}`);
-}
-
-export async function archiveMilestone(id: string): Promise<Milestone> {
-  const { data } = await api.post(`/milestones/${id}/archive`);
-  return data;
-}
-
-export async function unarchiveMilestone(id: string): Promise<Milestone> {
-  const { data } = await api.post(`/milestones/${id}/unarchive`);
-  return data;
-}
-
-export async function triggerMilestoneSync(): Promise<{ status: string }> {
-  const { data } = await api.post('/milestones/sync');
-  return data;
-}
-
-export async function getMilestoneDefinitions(): Promise<{
-  definitions: MilestoneDefinition[];
-  total: number;
-}> {
-  const { data } = await api.get('/milestones/definitions');
-  return data;
-}
-
 export async function exportData(password?: string): Promise<void> {
   const formData = new FormData();
   if (password) {
@@ -986,10 +784,5 @@ export async function importData(file: File, password?: string): Promise<{status
     },
     timeout: 120000 // 2 minutes for potentially large ZIPs
   });
-  return data;
-}
-
-export async function submitFeedback(text: string): Promise<{ status: string }> {
-  const { data } = await api.post<{ status: string }>('/feedback', { text });
   return data;
 }

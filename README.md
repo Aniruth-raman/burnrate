@@ -2,7 +2,7 @@
 
 **Privacy-first credit card spend analytics.**
 
-Burnrate is a personal finance app that keeps imported **statements and transactions in a local database** on your machine — no Burnrate-hosted cloud for your data, no telemetry. Optional **Gmail autosync** and **offers** syncing use the network only when you use those features (see **Privacy First** below).
+Burnrate is a personal finance app that keeps imported **statements and transactions in a local database** on your machine — no cloud, no telemetry, no outbound calls.
 
 **[→ Website & demo](https://pratik1235.github.io/burnrate)**
 
@@ -25,28 +25,20 @@ burnrate
 - **Auto-import** — Drop credit card statement PDFs or set up a watch folder for automatic processing
 - **Statements hub** — Browse imported statements, filter by bank and period, and manage uploads from one place, plus built-in payment reminders.
 - **Smart & Manual categorization** — Transactions auto-categorized with customizable categories and keywords. Support for manual inline category editing as well.
-- **Rich analytics** — Spend trends, category breakdowns, merchant insights, credit utilization
+- **Spending analytics** — Spend trends, category breakdowns, merchant insights, credit utilization
 - **Multi-card filtering** — Filter transactions and metrics by cards, categories, date range, amount, direction, and tags
 - **Multiple Views** — Analyze transactions per statement, consolidate across multiple cards, or apply flexible filters for any custom combination
 - **Transaction tagging** — Define and apply custom tags to transactions
 - **Data Export/Import** — Securely export and import your complete database with AES ZIP encryption.
 - **CSV export** — Export filtered transactions for external analysis
 - **Statement management** — Reparse or remove imported statements. Burnrate can automatically unlock most statement PDFs by generating common password combinations based on your profile. If it can't, you only enter the password once—it is securely stored in the encrypted local database for seamless future access.
-- **LLM Insights & Reminders** — Get AI-powered insights on your spending using cloud providers (Local LLM(OLLAMA), Anthropic, OpenAI, AWS Bedrock) with secure keychain credential storage.
-- **Offers & benefits** — Offers are fetched from public bank and aggregator pages, normalized, cached locally, and shown in a searchable catalog. Highlight offers that match your cards, hide noise, add your own manual offers, and refresh on demand. Always verify details with your issuer before relying on an offer.
-- **Spending milestones** — Track progress toward fee waivers, bonus points, lounge access, and other card benefits. Set custom goals or sync predefined milestones from bank definitions. Filter by card and see how much more you need to spend to reach each milestone.
-- **Gmail statement autosync (optional)** — Opt in to read-only Gmail OAuth (PKCE). Matching statement attachments (PDF, CSV, XLS/XLSX) are saved to your watch folder or default uploads and processed like manual drops. Configure OAuth in the backend; connect from **Customize** and monitor sync from the navbar.
-- **User Feedback** — Submit in-app feedback to report bugs or request features. The submission is securely proxied through the backend to protect your API endpoints (e.g., Formspree) from spam.
-- **Google Apps Script** — Alternative workflow: auto-download statements from Gmail into a folder the app watches ([`apps-script/`](apps-script/))
 
 ## Privacy First
 
 - All analytics and statement data live in a local **SQLite** database on your machine
 - **No telemetry, analytics, or tracking** in the core product
-- **Optional network features** (only if you enable or use them):
-  - **Gmail autosync** uses Google’s **read-only** Gmail scope; tokens are stored encrypted. See [docs/plans/gmail-autosync.md](docs/plans/gmail-autosync.md).
-  - **Offers** fetches public offer pages on a schedule for convenience; offers are cached locally. See [docs/plans/offers-benefits.md](docs/plans/offers-benefits.md).
-- With those options turned off, routine spend analytics do not require outbound calls to third parties
+- Routine spend analytics do not make outbound calls to third parties
+- Statement PDF passwords are encrypted in the local database. The encryption key stays on your machine and is only included in a backup when you protect that backup with a password
 
 > **Note:** Currently, only **HDFC**, **ICICI**, **Axis**, **Federal**, **IDFC FIRST**, **SBI** and **Indian Bank** credit cards are officially supported and tested. Other bank cards *may* work, but stability is not guaranteed at this time. Support for many more cards is coming soon! If you'd like to request support for a new card, please [create a GitHub issue](https://github.com/pratik1235/burnrate/issues/new?title=Card%20support%20request:%20%3CYour%20Bank%3E&labels=enhancement).
 
@@ -121,7 +113,7 @@ Open http://localhost:5173 in your browser.
 
 1. Complete the setup wizard (name, DOB, cards)
 2. Set a watch folder or import files (credit card statement PDFs)
-3. Explore your spend analytics — use **Customize** for optional Gmail autosync; use **Offers** in the nav for card benefits
+3. Explore your spend analytics — use **Customize** for categories, tags, payment reminders, and backups
 
 ## Configuration
 
@@ -137,17 +129,13 @@ You can customize properties such as the server port (`BURNRATE_PORT`), other co
 |-----------|------------|--------------|
 | ![](assets/screenshot_dashboard.png) | ![](assets/screenshot_statements.png) | ![](assets/screenshot_transactions.png) |
 
-| Analytics | Cards | Offers |
-|-----------|-------|--------|
-| ![](assets/screenshot_analytics.png) | ![](assets/screenshot_cards.png) | ![](assets/screenshot_offers.png) |
+| Analytics | Cards | Customize |
+|-----------|-------|-----------|
+| ![](assets/screenshot_analytics.png) | ![](assets/screenshot_cards.png) | ![](assets/screenshot_customize.png) |
 
-| Milestones | Customize | Categories |
-|------------|-----------|------------|
-| ![](assets/screenshot_milestones.png) | ![](assets/screenshot_customize.png) | ![](assets/screenshot_categories_modal.png) |
-
-| Setup | | |
-|-------|---|---|
-| ![](assets/screenshot_setup.png) | | |
+| Categories | Setup | |
+|------------|-------|---|
+| ![](assets/screenshot_categories_modal.png) | ![](assets/screenshot_setup.png) | |
 
 ## Tech Stack
 
@@ -177,7 +165,6 @@ burnrate/
 │   │   └── lib/          # Types, utils, API
 │   └── public/
 ├── src-tauri/            # Tauri native app shell
-├── apps-script/          # Gmail auto-download (optional)
 ├── tests/                # Integration test suite
 ├── scripts/              # Build scripts
 ├── docs/                 # Distribution documentation
@@ -206,7 +193,6 @@ Burnrate follows **spec-driven development** — all new features require a spec
 | [Requirements](docs/requirements.md) | Functional and non-functional requirements |
 | [Architecture](docs/architecture.md) | System architecture, data models, API docs, diagrams |
 | [Feature Plans](docs/plans/) | Index of feature specs |
-| [Apps Script](apps-script/README.md) | Optional Gmail→Google Drive statement downloader — deploy [`Code.gs`](apps-script/Code.gs) in Google Apps Script |
 
 ## License
 

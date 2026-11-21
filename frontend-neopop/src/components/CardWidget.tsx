@@ -17,7 +17,11 @@ interface CardWidgetProps {
 }
 
 export function CardWidget({ bank, last4, totalSpend, spendLines, transactionCount, className }: CardWidgetProps) {
-  const config = BANK_CONFIG[bank];
+  const config = BANK_CONFIG[bank] ?? {
+    name: bank ? String(bank).toUpperCase() : 'Card',
+    color: '#4B5563',
+    logo: '?',
+  };
 
   return (
     <div

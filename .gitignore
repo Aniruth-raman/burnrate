@@ -70,7 +70,9 @@ reddit-post.md
 *.db-wal
 *.db-shm
 *.db-journal
-tests/fixtures/
+tests/fixtures/*
+!tests/fixtures/hdfc_bank_min.csv
+!tests/fixtures/*_synthetic.pdf
 screenshots/
 
 # Internal/developer docs (not user-facing)

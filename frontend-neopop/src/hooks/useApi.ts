@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Category } from '@/lib/types';
-import type { Offer, Milestone } from '@/lib/types';
 import {
   getSettings,
   setupProfile,
@@ -12,8 +11,6 @@ import {
   getMerchants,
   getProcessingLogs,
   acknowledgeProcessingLog,
-  getOffers as apiGetOffers,
-  getMilestones as apiGetMilestones,
   type Settings,
   type SetupProfilePayload,
   type GetTransactionsParams,
@@ -21,7 +18,6 @@ import {
   type CategoryBlockByCurrency,
   type TrendsBlockByCurrency,
   type MerchantsBlockByCurrency,
-  type GetOffersParams,
 } from '@/lib/api';
 
 export function useSettings(): {
@@ -84,6 +80,7 @@ export interface TransactionFilters {
   from?: string;
   to?: string;
   category?: Category;
+  categories?: string;
   search?: string;
   tags?: string;
   direction?: string;
@@ -133,6 +130,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
       if (filters.from) params.from = filters.from;
       if (filters.to) params.to = filters.to;
       if (filters.category) params.category = filters.category;
+      if (filters.categories) params.categories = filters.categories;
       if (filters.search) params.search = filters.search;
       if (filters.tags) params.tags = filters.tags;
       if (filters.direction) params.direction = filters.direction;
@@ -167,6 +165,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
     filters.from,
     filters.to,
     filters.category,
+    filters.categories,
     filters.search,
     filters.tags,
     filters.direction,
@@ -196,6 +195,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
         if (filters.from) params.from = filters.from;
         if (filters.to) params.to = filters.to;
         if (filters.category) params.category = filters.category;
+      if (filters.categories) params.categories = filters.categories;
         if (filters.search) params.search = filters.search;
         if (filters.tags) params.tags = filters.tags;
         if (filters.direction) params.direction = filters.direction;
@@ -235,6 +235,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
     filters.from,
     filters.to,
     filters.category,
+    filters.categories,
     filters.search,
     filters.tags,
     filters.direction,
@@ -357,6 +358,7 @@ export function useAnalytics(filters: AnalyticsFilters = {}) {
       setError(null);
       try {
         const params = {
+          ...(filters.statementIds?.length ? { statement_ids: filters.statementIds.join(',') } : {}),
           ...(filters.from ? { from: filters.from } : {}),
           ...(filters.to ? { to: filters.to } : {}),
           ...(filters.cards ? { cards: filters.cards } : {}),
@@ -523,81 +525,4 @@ export function useProcessingLogPoller(
       clearInterval(timer);
     };
   }, [onLog, intervalMs]);
-}
-
-// ---------------------------------------------------------------------------
-// Offers
-// ---------------------------------------------------------------------------
-
-export function useOffers(params: GetOffersParams = {}): {
-  offers: Offer[];
-  total: number;
-  lastSyncAt: string | null;
-  loading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-} {
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [total, setTotal] = useState(0);
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const refetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await apiGetOffers(params);
-      setOffers(result.offers);
-      setTotal(result.total);
-      setLastSyncAt(result.lastSyncAt);
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error(String(e)));
-    } finally {
-      setLoading(false);
-    }
-  }, [JSON.stringify(params)]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { offers, total, lastSyncAt, loading, error, refetch };
-}
-
-// ---------------------------------------------------------------------------
-// Milestones
-// ---------------------------------------------------------------------------
-
-export function useMilestones(cardId?: string): {
-  milestones: Milestone[];
-  total: number;
-  loading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-} {
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const refetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await apiGetMilestones(cardId ? { card_id: cardId } : {});
-      setMilestones(result.milestones);
-      setTotal(result.total);
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error(String(e)));
-    } finally {
-      setLoading(false);
-    }
-  }, [cardId]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { milestones, total, loading, error, refetch };
 }

@@ -105,18 +105,24 @@ def update_category(
         if payload.keywords is not None:
             cat.keywords = payload.keywords.strip()
     else:
+        old_slug = cat.slug
         if payload.name is not None:
             name = payload.name.strip()
             if not name:
                 raise HTTPException(status_code=400, detail="Category name cannot be empty")
-            cat.name = name
-            cat.slug = _slug_from_name(name)
+            new_slug = _slug_from_name(name)
             existing = db.query(CategoryDefinition).filter(
-                CategoryDefinition.slug == cat.slug,
+                CategoryDefinition.slug == new_slug,
                 CategoryDefinition.id != category_id,
             ).first()
             if existing:
                 raise HTTPException(status_code=400, detail="Category with this name already exists")
+            cat.name = name
+            cat.slug = new_slug
+            if new_slug != old_slug:
+                db.query(Transaction).filter(Transaction.category == old_slug).update(
+                    {"category": new_slug}, synchronize_session=False
+                )
         if payload.keywords is not None:
             cat.keywords = payload.keywords.strip()
         if payload.color is not None:
@@ -144,6 +150,15 @@ def delete_custom_category(category_id: str, db: Session = Depends(get_db)) -> D
         raise HTTPException(status_code=404, detail="Category not found")
     if cat.is_prebuilt:
         raise HTTPException(status_code=400, detail="Cannot delete prebuilt categories")
+    in_use = db.query(Transaction).filter(Transaction.category == cat.slug).count()
+    if in_use:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{in_use} transaction(s) still use this category. "
+                "Change them before deleting it."
+            ),
+        )
     db.delete(cat)
     db.commit()
     return {"status": "ok"}

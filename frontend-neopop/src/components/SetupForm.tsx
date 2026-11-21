@@ -81,6 +81,7 @@ export function SetupForm({ onSubmit, className, initialData, isUpdate = false }
   const [cards, setCards] = useState<CardEntry[]>([{ bank: '', last4: '' }]);
   const [watchFolder, setWatchFolder] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState('');
+  const [cardError, setCardError] = useState('');
 
   const dobDayRef = useRef<HTMLInputElement | null>(null);
   const dobMonthRef = useRef<HTMLInputElement | null>(null);
@@ -112,12 +113,10 @@ export function SetupForm({ onSubmit, className, initialData, isUpdate = false }
 
   const handleBrowse = useCallback(async () => {
     try {
-      const { data } = await api.post('/settings/browse-folder');
+      const { data } = await api.post('/settings/browse-folder', undefined, { timeout: 120000 });
       if (cancelledRef.current) return;
-      if (data.path) {
-        setWatchFolder(data.path);
-        return;
-      }
+      if (data.path) setWatchFolder(data.path);
+      return;
     } catch {
       if (cancelledRef.current) return;
       // Backend not available, fall through
@@ -148,7 +147,13 @@ export function SetupForm({ onSubmit, className, initialData, isUpdate = false }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit?.({ name, dobDay, dobMonth, dobYear, cards, watchFolder, displayCurrency });
+    const validCards = cards.filter((c) => c.bank && /^\d{4}$/.test(c.last4));
+    if (validCards.length !== cards.length) {
+      setCardError('Each card needs a bank and a 4-digit card ending.');
+      return;
+    }
+    setCardError('');
+    onSubmit?.({ name, dobDay, dobMonth, dobYear, cards: validCards, watchFolder, displayCurrency });
   };
 
   return (
@@ -434,6 +439,11 @@ export function SetupForm({ onSubmit, className, initialData, isUpdate = false }
             <Button type="submit" variant="primary" kind="elevated" size="big" colorMode="dark" fullWidth style={{ marginTop: 8 }}>
               {isUpdate ? 'Update' : 'Save & Continue'}
             </Button>
+            {cardError && (
+              <Typography fontType={FontType.BODY} fontSize={12} fontWeight={FontWeights.REGULAR} color={colorPalette.rss[500]} style={{ marginTop: 8 }}>
+                {cardError}
+              </Typography>
+            )}
           </div>
         </form>
 

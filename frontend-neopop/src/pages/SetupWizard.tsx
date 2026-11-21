@@ -81,7 +81,7 @@ export function SetupWizard() {
       dobMonth: data.dobMonth,
       dobYear: data.dobYear,
       watchFolder: data.watchFolder,
-      displayCurrency: data.displayCurrency || undefined,
+      displayCurrency: data.displayCurrency,
       cards: data.cards.map(({ bank, last4 }) => ({ bank, last4 })),
     });
   };
@@ -113,7 +113,7 @@ export function SetupWizard() {
             last4: c.last4,
           })),
           watchFolder: data.watchFolder,
-          displayCurrency: data.displayCurrency || undefined,
+          displayCurrency: data.displayCurrency,
         });
         toast.success('Profile saved! Redirecting to dashboard...');
       }

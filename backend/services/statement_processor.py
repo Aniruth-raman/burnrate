@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models.database import SessionLocal
-from backend.models.models import Card, Statement, Settings, Transaction
+from backend.models.models import Card, Statement, Settings, Transaction, generate_uuid
 from backend.services.categorizer import categorize
 from backend.services.pdf_unlock import (
     _validate_pdf_path,
@@ -221,6 +221,7 @@ def process_statement(
     source: str = "CC",
     original_upload_path: Optional[str] = None,
     reparse_mode: bool = False,
+    replace_statement_id: Optional[str] = None,
     preserved_manual_categories: Optional[Dict[str, List[str]]] = None,
 ) -> Dict:
     """
@@ -268,18 +269,24 @@ def process_statement(
             _pre_existing_hash = db_session.query(Statement).filter(
                 Statement.file_hash == file_hash
             ).first()
-        elif not reparse_mode:
+        elif not replace_statement_id:
             existing = db_session.query(Statement).filter(
                 Statement.file_hash == file_hash
             ).first()
             if existing:
-                return {
-                    "status": "duplicate",
-                    "message": "Statement already imported",
-                    "count": 0,
-                    "period": None,
-                    "bank": bank,
-                }
+                if existing.status == "password_needed":
+                    # Nothing was imported yet, so let a re-upload retry unlocking
+                    # (e.g. after the user adds their card or sets a password).
+                    db_session.delete(existing)
+                    db_session.commit()
+                else:
+                    return {
+                        "status": "duplicate",
+                        "message": "Statement already imported",
+                        "count": 0,
+                        "period": None,
+                        "bank": bank,
+                    }
 
         if is_csv:
             return _process_csv_statement(
@@ -290,6 +297,7 @@ def process_statement(
                 db_session=db_session,
                 original_upload_path=original_upload_path,
                 reparse_mode=reparse_mode,
+                replace_statement_id=replace_statement_id,
                 preserved_manual_categories=preserved_manual_categories,
             )
 
@@ -313,9 +321,9 @@ def process_statement(
                     if detected and detected in SUPPORTED_BANKS:
                         bank = detected
             else:
-                if reparse_mode:
-                    db_session.rollback()
-                else:
+                # Keep a row even on reparse so a wrong password never deletes
+                # the statement from the library.
+                if not replace_statement_id:
                     _create_password_needed_statement(
                         db_session, file_hash, pdf_path, bank, source, original_upload_path,
                     )
@@ -369,9 +377,7 @@ def process_statement(
                                 
             # Step 3: Return password_needed if all failed
             if not unlocked:
-                if reparse_mode:
-                    db_session.rollback()
-                else:
+                if not replace_statement_id:
                     _create_password_needed_statement(
                         db_session, file_hash, pdf_path, bank, source, original_upload_path,
                     )
@@ -537,6 +543,15 @@ def process_statement(
                     f"statement belongs to. Multiple cards are registered "
                     f"for this bank."
                 )
+                if replace_statement_id:
+                    return {
+                        "status": "card_last4_not_parsed",
+                        "message": card_msg,
+                        "count": 0,
+                        "period": None,
+                        "bank": bank,
+                        "card_last4": None,
+                    }
                 statement = Statement(
                     encrypted_password=encrypted_password_to_save,
                     bank=bank,
@@ -580,8 +595,16 @@ def process_statement(
                 "Parse error for %s (%s ...%s): no transactions or period extracted",
                 pdf_path, bank, card_last4,
             )
-            if reparse_mode:
+            if reparse_mode or replace_statement_id:
                 db_session.rollback()
+                if replace_statement_id:
+                    return {
+                        "status": "parse_error",
+                        "message": parse_msg,
+                        "count": 0,
+                        "period": None,
+                        "bank": bank,
+                    }
             else:
                 statement = Statement(
                     encrypted_password=encrypted_password_to_save,
@@ -631,9 +654,9 @@ def process_statement(
             # Single-card statement — existing behaviour preserved exactly
             card_partition = {card_last4: parsed.transactions}
 
-        total_created = 0
         period_start = parsed.period_start
         period_end = parsed.period_end
+        new_rows: list[tuple[Statement, list[Transaction]]] = []
 
         for c_last4, c_txns in card_partition.items():
             if not c_last4:
@@ -651,22 +674,23 @@ def process_statement(
                 continue
 
             # Auto-populate Card.name from the detected card variant if it is
-            # not yet set (write-once). Do this even if the statement itself
-            # is a duplicate, so users can re-upload to backfill the name.
+            # not yet set (write-once). Committed with the rest of the statement.
             card_variant = getattr(parsed, "card_variant", None)
             if card_variant and not card_obj.name:
                 card_obj.name = card_variant
                 logger.info(
                     "Auto-named card %s ...%s → %r", bank, c_last4, card_variant
                 )
-                db_session.commit()
 
-            # Per-card dedup: same file_hash + same card_last4 = already imported
+            # Per-card dedup: same file_hash + same card_last4 = already imported.
+            # A reparse is allowed to replace its own row.
             existing = db_session.query(Statement).filter(
                 Statement.file_hash == file_hash,
                 Statement.card_last4 == c_last4,
             ).first()
-            if existing:
+            if existing and not (
+                replace_statement_id and existing.id == replace_statement_id
+            ):
                 logger.info(
                     "Duplicate statement (file_hash, card=%s) — skipping", c_last4
                 )
@@ -722,6 +746,7 @@ def process_statement(
                     )
 
             stmt = Statement(
+                id=generate_uuid(),
                 encrypted_password=encrypted_password_to_save,
                 bank=bank,
                 card_last4=c_last4,
@@ -742,9 +767,8 @@ def process_statement(
                 currency=cur,
                 payment_due_date=getattr(parsed, "payment_due_date", None),
             )
-            db_session.add(stmt)
-            db_session.flush()
 
+            txns: list[Transaction] = []
             for pt in c_txns:
                 # Use parser-provided category hint; fall back to keyword matching
                 category = pt.category if pt.category else categorize(
@@ -757,7 +781,7 @@ def process_statement(
                         category = preserved_manual_categories[key].pop(0)
                         is_manual = 1
 
-                tx = Transaction(
+                txns.append(Transaction(
                     statement_id=stmt.id,
                     date=pt.date,
                     merchant=pt.merchant,
@@ -771,14 +795,15 @@ def process_statement(
                     source=source,
                     currency=cur,
                     is_manually_categorized=is_manual,
-                )
-                db_session.add(tx)
+                ))
 
-            total_created += len(c_txns)
+            new_rows.append((stmt, txns))
+
+        total_created = sum(len(txns) for _, txns in new_rows)
 
         # If every card was a duplicate, report as duplicate
         if total_created == 0:
-            if _pre_existing_hash:
+            if _pre_existing_hash or replace_statement_id:
                 return {
                     "status": "duplicate",
                     "message": "Statement already imported",
@@ -794,6 +819,30 @@ def process_statement(
                     "period": None,
                     "bank": bank,
                 }
+
+        # Only now that a replacement row exists is it safe to delete the old one.
+        if replace_statement_id:
+            old = db_session.query(Statement).filter(
+                Statement.id == replace_statement_id
+            ).first()
+            old_is_failed = getattr(old, "status", "success") != "success"
+            if old and (
+                old_is_failed
+                or old.card_last4 is None
+                or any(stmt.card_last4 == old.card_last4 for stmt, _ in new_rows)
+            ):
+                for stmt, _ in new_rows:
+                    if old.card_last4 is None or stmt.card_last4 == old.card_last4:
+                        stmt.note = stmt.note or old.note
+                        stmt.encrypted_password = (
+                            stmt.encrypted_password or old.encrypted_password
+                        )
+                db_session.delete(old)
+                db_session.flush()
+
+        for stmt, txns in new_rows:
+            db_session.add(stmt)
+            db_session.add_all(txns)
 
         db_session.commit()
 
@@ -850,6 +899,7 @@ def _process_csv_statement(
     db_session: Session,
     original_upload_path: Optional[str] = None,
     reparse_mode: bool = False,
+    replace_statement_id: Optional[str] = None,
     preserved_manual_categories: Optional[dict] = None,
 ) -> Dict:
     """Process a CSV bank statement: detect bank, parse, categorize, persist."""
@@ -859,7 +909,7 @@ def _process_csv_statement(
 
     if not bank:
         bank_msg = "Could not detect bank from CSV filename or content."
-        if reparse_mode:
+        if reparse_mode or replace_statement_id:
             db_session.rollback()
         else:
             statement = Statement(
@@ -912,11 +962,10 @@ def _process_csv_statement(
             "CSV parse error for %s (%s): no transactions extracted",
             csv_path, bank,
         )
-        if reparse_mode:
+        if reparse_mode or replace_statement_id:
             db_session.rollback()
         else:
             statement = Statement(
-                encrypted_password=encrypted_password_to_save,
                 bank=bank,
                 card_last4=card_last4,
                 period_start=None,
@@ -951,7 +1000,7 @@ def _process_csv_statement(
 
     cur = _parsed_currency(parsed)
     statement = Statement(
-        encrypted_password=encrypted_password_to_save,
+        id=generate_uuid(),
         bank=bank,
         card_last4=card_last4,
         period_start=parsed.period_start,
@@ -966,8 +1015,16 @@ def _process_csv_statement(
         parse_failed=0,
         currency=cur,
     )
+    if replace_statement_id:
+        old = db_session.query(Statement).filter(
+            Statement.id == replace_statement_id
+        ).first()
+        if old:
+            statement.note = old.note
+            statement.encrypted_password = old.encrypted_password
+            db_session.delete(old)
+            db_session.flush()
     db_session.add(statement)
-    db_session.flush()
 
     for pt in parsed.transactions:
         # Use parser-provided category hint when available; fall back to keyword matching.

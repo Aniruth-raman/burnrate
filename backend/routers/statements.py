@@ -226,14 +226,27 @@ async def upload_bulk(
         basename = display_name or f"upload{ext}"
         safe_name = f"{uuid4().hex}_{basename}"
         persistent_path = str(UPLOADS_DIR / safe_name)
-        content = await f.read()
-        if len(content) > MAX_UPLOAD_SIZE:
+        size = 0
+        too_large = False
+        with open(persistent_path, "wb") as out:
+            while True:
+                chunk = await f.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    too_large = True
+                    break
+                out.write(chunk)
+        if too_large:
+            try:
+                os.remove(persistent_path)
+            except OSError:
+                pass
             rejected.append(
                 BulkRejectedItem(file_name=display_name, reason=BulkRejectReason.file_too_large)
             )
             continue
-        with open(persistent_path, "wb") as out:
-            out.write(content)
         jobs.append((persistent_path, display_name, path_by_index[idx]))
 
     if not jobs:
@@ -321,47 +334,32 @@ async def upload_bulk(
 def _process_one_statement(
     statement_id: str, file_path: str, bank: Optional[str], source: str = "CC", original_upload_path: Optional[str] = None, override_manual: bool = False
 ) -> Dict[str, Any]:
-    """Process a single statement file in a worker thread."""
+    """Reparse a single statement in a worker thread."""
     from backend.services.statement_processor import process_statement
 
     session = SessionLocal()
     try:
         stmt = session.query(Statement).filter(Statement.id == statement_id).first()
+        if not stmt:
+            return {"status": "error", "message": "Statement not found", "count": 0}
+
         preserved_manual_categories = {}
-        if stmt:
-            if not override_manual:
-                for tx in stmt.transactions:
-                    if getattr(tx, "is_manually_categorized", 0) == 1:
-                        key = f"{tx.date.isoformat()}_{tx.merchant}_{float(tx.amount):.2f}_{tx.type}"
-                        if key not in preserved_manual_categories:
-                            preserved_manual_categories[key] = []
-                        preserved_manual_categories[key].append(tx.category)
-            # 3.1: Temporarily alter unique keys to avoid constraint collision during reparse without deleting early
-            old_hash = stmt.file_hash
-            old_card = stmt.card_last4
-            stmt.file_hash = f"reparse_{stmt.id}"
-            stmt.card_last4 = f"reparse_{stmt.id}"
-            session.commit()
-            
-        result = process_statement(
-            pdf_path=file_path, bank=bank.lower() if bank else None, db_session=session, source=source,
-            original_upload_path=original_upload_path, reparse_mode=True,
+        if not override_manual:
+            for tx in stmt.transactions:
+                if getattr(tx, "is_manually_categorized", 0) == 1:
+                    key = f"{tx.date.isoformat()}_{tx.merchant}_{float(tx.amount):.2f}_{tx.type}"
+                    preserved_manual_categories.setdefault(key, []).append(tx.category)
+
+        return process_statement(
+            pdf_path=file_path,
+            bank=bank.lower() if bank else None,
+            db_session=session,
+            source=source,
+            original_upload_path=original_upload_path,
+            reparse_mode=True,
+            replace_statement_id=statement_id,
             preserved_manual_categories=preserved_manual_categories,
         )
-        
-        if stmt:
-            stmt = session.query(Statement).filter(Statement.id == statement_id).first()
-            if result.get("status") != "success":
-                if stmt:
-                    stmt.file_hash = old_hash
-                    stmt.card_last4 = old_card
-                    session.commit()
-            else:
-                if stmt:
-                    session.delete(stmt)
-                    session.commit()
-            
-        return result
     finally:
         session.close()
 
@@ -389,7 +387,9 @@ def reparse_all_statements(payload: Optional[ReparseAllPayload] = None, db: Sess
 
     from backend.services import processing_queue
     futures = {
-        processing_queue.submit(_process_one_statement, sid, path, bank, source, orig, override_manual): path
+        processing_queue.run(
+            _process_one_statement, sid, path, bank, source, orig, override_manual
+        ): path
         for sid, path, bank, source, orig in valid_entries
     }
     for future in concurrent.futures.as_completed(futures):
@@ -683,9 +683,6 @@ def reparse_with_password(
     stmt_bank = (stmt.bank or "").strip().lower()
     stmt_bank_arg = stmt_bank if stmt_bank and stmt_bank != "unknown" else None
 
-    db.delete(stmt)
-    db.commit()
-
     result = process_statement(
         pdf_path=file_path,
         bank=stmt_bank_arg,
@@ -694,6 +691,7 @@ def reparse_with_password(
         source=stmt_source,
         original_upload_path=preserved_orig,
         reparse_mode=True,
+        replace_statement_id=stmt.id,
         preserved_manual_categories=preserved_manual_categories,
     )
     
@@ -723,10 +721,11 @@ def reparse_statement(
     from backend.services.statement_processor import process_statement
 
     stmt_source = getattr(stmt, "source", None) or "CC"
-    stmt_bank = stmt.bank
+    stmt_bank = (stmt.bank or "").strip().lower()
+    stmt_bank_arg = stmt_bank if stmt_bank and stmt_bank != "unknown" else None
     preserved_orig = getattr(stmt, "original_upload_path", None)
 
-    # Fetch manual categories before delete
+    # Fetch manual categories before the statement is replaced
     preserved_manual_categories = {}
     if not override_manual:
         for tx in stmt.transactions:
@@ -736,16 +735,14 @@ def reparse_statement(
                     preserved_manual_categories[key] = []
                 preserved_manual_categories[key].append(tx.category)
 
-    db.delete(stmt)
-    db.commit()
-
     result = process_statement(
         pdf_path=file_path,
-        bank=stmt_bank,
+        bank=stmt_bank_arg,
         db_session=db,
         source=stmt_source,
         original_upload_path=preserved_orig,
         reparse_mode=True,
+        replace_statement_id=stmt.id,
         preserved_manual_categories=preserved_manual_categories,
     )
     

@@ -36,6 +36,13 @@ from tests.synthetic_profile import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+
+def _require_fixture(name: str) -> Path:
+    path = FIXTURES / name
+    if not path.exists():
+        pytest.skip(f"missing fixture {name} (statement PDFs are gitignored)")
+    return path
+
 PROFILE = {
     "name": NAME,
     "dob_day": DOB_DAY,
@@ -67,7 +74,7 @@ class TestHDFCParser:
 
     @pytest.fixture(autouse=True)
     def parse(self, tmp_path):
-        src = str(FIXTURES / HDFC_STATEMENT)
+        src = str(_require_fixture(HDFC_STATEMENT))
         unlocked = _unlock(src, "hdfc")
         self.result = HDFCParser().parse(unlocked)
         yield
@@ -115,7 +122,7 @@ class TestAxisParser:
 
     @pytest.fixture(autouse=True)
     def parse(self, tmp_path):
-        src = str(FIXTURES / AXIS_STATEMENT)
+        src = str(_require_fixture(AXIS_STATEMENT))
         unlocked = _unlock(src, "axis")
         self.result = AxisParser().parse(unlocked)
         yield
@@ -148,7 +155,7 @@ class TestICICIParser:
 
     @pytest.fixture(autouse=True)
     def parse(self, tmp_path):
-        src = str(FIXTURES / ICICI_STATEMENT)
+        src = str(_require_fixture(ICICI_STATEMENT))
         unlocked = _unlock(src, "icici")
         self.result = ICICIParser().parse(unlocked)
         yield
@@ -181,7 +188,7 @@ class TestIDFCFirstParser:
 
     @pytest.fixture(autouse=True)
     def parse(self):
-        src = str(FIXTURES / IDFC_SYNTHETIC_PDF)
+        src = str(_require_fixture(IDFC_SYNTHETIC_PDF))
         self.result = IDFCFirstBankParser().parse(src)
 
     def test_card_detected(self):
@@ -229,7 +236,7 @@ class TestSBICardParser:
 
     @pytest.fixture(autouse=True)
     def parse(self):
-        src = str(FIXTURES / SBI_SYNTHETIC_PDF)
+        src = str(_require_fixture(SBI_SYNTHETIC_PDF))
         self.result = SBICardParser().parse(src)
 
     # --- Metadata ---

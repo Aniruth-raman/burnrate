@@ -493,6 +493,7 @@ export function Statements() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const noteAnchorRef = useRef<HTMLButtonElement | null>(null);
   const notePopoverSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const requestSeqRef = useRef(0);
   const [notePopoverStatementId, setNotePopoverStatementId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [notePopoverCoords, setNotePopoverCoords] = useState({ top: 0, left: 0 });
@@ -571,6 +572,7 @@ export function Statements() {
   }, []);
 
   const fetchStatements = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     setLoading(true);
     try {
       const params: GetStatementsParams = {};
@@ -603,20 +605,24 @@ export function Statements() {
       }
 
       const res = await getStatements(params);
+      if (seq !== requestSeqRef.current) return null;
       setStatements(res.statements);
       setTotalStatements(res.total);
       setTotalAmountDue(res.totalAmountDue ?? null);
       setTotalsByCurrency(res.totalsByCurrency ?? []);
       setMixedCurrency(res.mixedCurrency ?? false);
+      return res;
     } catch {
+      if (seq !== requestSeqRef.current) return null;
       toast.error('Failed to load statements');
       setStatements([]);
       setTotalStatements(0);
       setTotalAmountDue(null);
       setTotalsByCurrency([]);
       setMixedCurrency(false);
+      return null;
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
   }, [stmtFilters, sortKey, pageIndex, searchQuery, filters.pageSize]);
 
@@ -770,7 +776,10 @@ export function Statements() {
     try {
       await deleteStatement(confirmDeleteId);
       toast.success('Statement deleted');
-      setStatements((prev) => prev.filter((s) => s.id !== confirmDeleteId));
+      const res = await fetchStatements();
+      if (res && res.statements.length === 0 && pageIndex > 0) {
+        setPageIndex(pageIndex - 1);
+      }
     } catch {
       toast.error('Delete failed');
     } finally {
@@ -785,7 +794,10 @@ export function Statements() {
     try {
       await deleteStatement(id);
       toast.success('Statement deleted');
-      setStatements((prev) => prev.filter((s) => s.id !== id));
+      const res = await fetchStatements();
+      if (res && res.statements.length === 0 && pageIndex > 0) {
+        setPageIndex(pageIndex - 1);
+      }
     } catch {
       toast.error('Delete failed');
     } finally {

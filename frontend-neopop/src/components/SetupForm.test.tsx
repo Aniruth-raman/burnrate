@@ -26,6 +26,6 @@ describe('SetupForm', () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/path to statements folder/i)).toHaveValue('/Users/test/WatchFolder');
     });
-    expect(postMock).toHaveBeenCalledWith('/settings/browse-folder');
+    expect(postMock).toHaveBeenCalledWith('/settings/browse-folder', undefined, { timeout: 120000 });
   });
 });

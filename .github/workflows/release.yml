@@ -36,9 +36,6 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Inject Secrets into Production Env
-        run: echo "FORMSPREE_URL=${{ secrets.FORMSPREE_URL }}" >> .env.production
-
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
         with:
@@ -117,9 +114,6 @@ jobs:
       - name: Generate app icons from SVG
         run: |
           bash scripts/generate-icons.sh
-
-      - name: Inject Secrets into Production Env
-        run: echo "FORMSPREE_URL=${{ secrets.FORMSPREE_URL }}" >> .env.production
 
       - name: Build Python sidecar
         env:

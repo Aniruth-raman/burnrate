@@ -25,7 +25,7 @@ def _path_is_under_any_root(path: Path, roots: Tuple[Path, ...]) -> bool:
 def allowed_roots_for_statements(db_session: Session) -> Tuple[Path, ...]:
     """Directories where statement PDF/CSV files may be read (uploads + watch folder)."""
     from backend.models.database import UPLOADS_DIR
-    from backend.models.models import Settings
+    from backend.models.models import Settings, Statement
 
     ordered: list[Path] = [UPLOADS_DIR.resolve()]
     settings = db_session.query(Settings).first()
@@ -36,6 +36,17 @@ def allowed_roots_for_statements(db_session: Session) -> Tuple[Path, ...]:
                 ordered.append(wf)
         except OSError:
             pass
+    # The watch folder can change after files are imported; keep reading files
+    # that are already recorded in the database.
+    for (file_path,) in db_session.query(Statement.file_path).distinct():
+        if not file_path:
+            continue
+        try:
+            parent = Path(file_path).resolve().parent
+        except (OSError, RuntimeError):
+            continue
+        if parent not in ordered:
+            ordered.append(parent)
     return tuple(ordered)
 
 
@@ -312,8 +323,10 @@ def unlock_pdf_with_password(
                 tmp = tempfile.NamedTemporaryFile(
                     suffix=".pdf", prefix="burnrate_unlocked_", delete=False,
                 )
-                pdf.save(tmp.name)
+                # Windows cannot write to a file that is still open, so close the
+                # handle before pikepdf saves (the name is kept via delete=False).
                 tmp.close()
+                pdf.save(tmp.name)
                 return tmp.name, pwd
         except pikepdf.PasswordError:
             continue

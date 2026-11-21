@@ -143,9 +143,6 @@ function TransactionsContent() {
   const [excludedIds, setExcludedIds] = useState<Set<string>>(() => new Set());
   const [exclusionMode, setExclusionMode] = useState(false);
 
-  const categoryFilter =
-    filters.selectedCategories.length === 1 ? filters.selectedCategories[0] : undefined;
-
   useEffect(() => {
     try {
       localStorage.setItem('transactionsSortKey', sortKey);
@@ -175,7 +172,7 @@ function TransactionsContent() {
     cards: filters.selectedCards.length > 0 ? filters.selectedCards.join(',') : undefined,
     bankAccounts:
       filters.selectedBankAccounts.length > 0 ? filters.selectedBankAccounts.join(',') : undefined,
-    category: categoryFilter,
+    categories: filters.selectedCategories.length > 0 ? filters.selectedCategories.join(',') : undefined,
     search: searchQuery || undefined,
     tags: filters.selectedTags?.length ? filters.selectedTags.join(',') : undefined,
     from: filters.dateRange.from,
